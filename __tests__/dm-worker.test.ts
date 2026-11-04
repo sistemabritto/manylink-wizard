@@ -129,6 +129,7 @@ vi.mock("bullmq", () => {
 });
 
 import { createDMWorker } from "../lib/queue/dm-worker";
+import { sendCommentReply } from "../lib/meta/client";
 
 const usagePeriodStart = new Date("2026-05-01T00:00:00.000Z");
 
@@ -538,6 +539,38 @@ describe("DM Worker — Full Pipeline", () => {
       "comment_555",
       "Hey there! Here is the link: https://example.com"
     );
+  });
+
+  it("posts only the public reply when the campaign has no DM message", async () => {
+    mockPrisma.automation.findMany.mockResolvedValue([
+      {
+        ...mockAutomation,
+        dmMessage: "",
+        matchAnyWord: true,
+        publicReplyEnabled: true,
+        publicReplyMessages: ["Oi @{username}, link na bio!"],
+      },
+    ]);
+    const processor = getProcessor();
+
+    await processor(createMockJob());
+
+    expect(vi.mocked(sendCommentReply)).toHaveBeenCalledWith(
+      "decrypted_token",
+      "comment_555",
+      "Oi @commenter_user, link na bio!"
+    );
+    expect(mockSendPrivateReply).not.toHaveBeenCalled();
+    expect(mockReserveWorkspaceDMSend).not.toHaveBeenCalled();
+    expect(mockPrisma.dmLog.update).toHaveBeenCalledWith({
+      where: {
+        automationId_commentId: {
+          automationId: "auto_789",
+          commentId: "comment_555",
+        },
+      },
+      data: expect.objectContaining({ status: "SKIPPED_NO_MATCH" }),
+    });
   });
 
   it("should deliver tracked links as web_url buttons (one or two)", async () => {
