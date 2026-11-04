@@ -283,6 +283,38 @@ export async function getUserFollowStatus(
   }
 }
 
+const mediaShortcodeCache = new Map<string, string>();
+
+/**
+ * Shortcode of a post/reel (the `DQx...` in instagram.com/reel/DQx...), used to
+ * tag tracked links with the post a comment came from. Cached per process;
+ * returns null when Instagram does not answer, so callers fall back to the id.
+ */
+export async function getMediaShortcode(
+  accessToken: string,
+  mediaId: string
+): Promise<string | null> {
+  const cached = mediaShortcodeCache.get(mediaId);
+  if (cached) return cached;
+
+  const url = new URL(`${instagramGraphBase()}/${mediaId}`);
+  url.searchParams.set("fields", "shortcode");
+  try {
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (typeof data?.shortcode !== "string" || !data.shortcode) return null;
+    if (mediaShortcodeCache.size >= 1000) mediaShortcodeCache.clear();
+    mediaShortcodeCache.set(mediaId, data.shortcode);
+    return data.shortcode;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A tappable web_url button in a DM button template. Instagram's button
  * template supports up to 3 buttons; titles are capped at 20 chars by Meta.

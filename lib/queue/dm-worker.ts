@@ -25,6 +25,7 @@ import {
   sendPrivateReply,
   sendPrivateReplyWithButton,
   sendPrivateReplyWithLinkButton,
+  getMediaShortcode,
 } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
 import { matchKeywords } from "@/lib/utils/keyword-matcher";
@@ -84,10 +85,11 @@ type WorkerTrackedLink = {
  */
 function buildLinkButtons(
   trackedLinks: WorkerTrackedLink[],
-  primaryLabel: string | null
+  primaryLabel: string | null,
+  origin?: string | null
 ): { title: string; url: string }[] {
   return trackedLinks.slice(0, 3).map((link, index) => ({
-    url: buildTrackedUrl(link.slug),
+    url: buildTrackedUrl(link.slug, undefined, origin),
     title: (index === 0 ? primaryLabel : link.label) || link.label || "Open link",
   }));
 }
@@ -101,12 +103,15 @@ function buildInlineLinkFallback(
   message: string,
   commenterName: string | null | undefined,
   trackedLinks: WorkerTrackedLink[],
-  bodyText: string
+  bodyText: string,
+  origin?: string | null
 ): string {
   const base =
-    renderMessageWithTracking({ message, commenterName, trackedLinks }) ||
+    renderMessageWithTracking({ message, commenterName, trackedLinks, origin }) ||
     bodyText;
-  const extraUrls = trackedLinks.slice(1).map((link) => buildTrackedUrl(link.slug));
+  const extraUrls = trackedLinks
+    .slice(1)
+    .map((link) => buildTrackedUrl(link.slug, undefined, origin));
   return extraUrls.length > 0 ? `${base}\n${extraUrls.join("\n")}` : base;
 }
 
@@ -599,6 +604,12 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           `followcheck:${automation.id}`
         );
       } else if (automation.trackedLinks.length > 0) {
+        // Tag every link with the post the comment came from (shortcode, or the
+        // media id if Instagram does not return one) so the destination can
+        // attribute the click per post via its {post} placeholder.
+        const originMediaId = originalMediaId ?? mediaId;
+        const linkOrigin =
+          (await getMediaShortcode(accessToken, originMediaId)) ?? originMediaId;
         // Try button template first; if Meta rejects it, fall back to inline links.
         const bodyText =
           renderMessageWithoutLink({
@@ -607,7 +618,8 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
           }) || "Here's your link:";
         const buttons = buildLinkButtons(
           automation.trackedLinks,
-          automation.linkButtonLabel
+          automation.linkButtonLabel,
+          linkOrigin
         );
 
         try {
@@ -632,7 +644,8 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
             automation.dmMessage,
             commenterName,
             automation.trackedLinks,
-            bodyText
+            bodyText,
+            linkOrigin
           );
           try {
             await sendPrivateReply(

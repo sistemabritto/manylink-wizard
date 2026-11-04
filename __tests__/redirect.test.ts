@@ -63,6 +63,33 @@ describe("tracked link redirect route", () => {
     });
   });
 
+  it("fills the {post} placeholder from the o param, and falls back when missing or unsafe", async () => {
+    mockPrisma.trackedLink.findUnique.mockResolvedValue({
+      id: "link_123",
+      workspaceId: "workspace_123",
+      automationId: "automation_123",
+      destinationUrl:
+        "https://example.com/signup?utm_campaign=ig_{post}&utm_content=dreamer",
+      automation: { instagramAccountId: "instagram_account_123" },
+    });
+    mockPrisma.linkClick.create.mockResolvedValue({});
+    const go = (query: string) =>
+      GET(
+        new Request(`https://manychat-alternative.com/r/abc123${query}`) as Parameters<typeof GET>[0],
+        { params: Promise.resolve({ slug: "abc123" }) }
+      );
+
+    expect((await go("?o=DQx-12_ab")).headers.get("location")).toBe(
+      "https://example.com/signup?utm_campaign=ig_DQx-12_ab&utm_content=dreamer"
+    );
+    expect((await go("")).headers.get("location")).toBe(
+      "https://example.com/signup?utm_campaign=ig_sem_post&utm_content=dreamer"
+    );
+    expect((await go("?o=%3Cscript%3E")).headers.get("location")).toBe(
+      "https://example.com/signup?utm_campaign=ig_sem_post&utm_content=dreamer"
+    );
+  });
+
   it("redirects unknown slugs to the homepage without logging a click", async () => {
     mockPrisma.trackedLink.findUnique.mockResolvedValue(null);
 
