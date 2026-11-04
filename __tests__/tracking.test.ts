@@ -110,3 +110,22 @@ describe("campaign analytics helpers", () => {
     ]);
   });
 });
+
+describe("link origin (post) tagging", () => {
+  it("appends a sanitized origin to tracked urls", async () => {
+    const { buildTrackedUrl } = await import("../lib/tracking/message");
+    expect(buildTrackedUrl("abc", "https://x.io/", "DQx1")).toBe("https://x.io/r/abc?o=DQx1");
+    expect(buildTrackedUrl("abc", "https://x.io", "a b&c")).toBe("https://x.io/r/abc");
+    expect(buildTrackedUrl("abc", "https://x.io")).toBe("https://x.io/r/abc");
+  });
+
+  it("leaves destinations without the placeholder untouched", async () => {
+    const { resolveTrackedDestination } = await import("../lib/tracking/message");
+    expect(resolveTrackedDestination("https://x.io/a?utm_campaign=fixo", "DQx1")).toBe(
+      "https://x.io/a?utm_campaign=fixo"
+    );
+    expect(resolveTrackedDestination("https://x.io/a?c=ig_%7Bpost%7D", "DQx1")).toBe(
+      "https://x.io/a?c=ig_DQx1"
+    );
+  });
+});

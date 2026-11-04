@@ -51,14 +51,45 @@ export function renderMessageWithoutLink({
     .trim();
 }
 
-export function buildTrackedUrl(slug: string, baseUrl?: string) {
+/**
+ * Placeholder a tracked link's destination can carry to receive the post the
+ * click came from (e.g. `utm_campaign=ig_{post}`). Filled at redirect time from
+ * the `o` query param, so one campaign/link works for every post.
+ */
+export const LINK_ORIGIN_PLACEHOLDER = /\{post\}|%7Bpost%7D/gi;
+export const UNKNOWN_LINK_ORIGIN = "sem_post";
+
+/** Keep only URL/UTM-safe origin tags (post shortcode or media id). */
+export function sanitizeLinkOrigin(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(trimmed) ? trimmed : null;
+}
+
+export function resolveTrackedDestination(
+  destinationUrl: string,
+  origin?: string | null
+): string {
+  return destinationUrl.replace(
+    LINK_ORIGIN_PLACEHOLDER,
+    sanitizeLinkOrigin(origin) ?? UNKNOWN_LINK_ORIGIN
+  );
+}
+
+export function buildTrackedUrl(
+  slug: string,
+  baseUrl?: string,
+  origin?: string | null
+) {
   const resolvedBaseUrl =
     baseUrl ??
     (typeof window !== "undefined"
       ? window.location.origin
       : process.env.NEXTAUTH_URL ?? "http://localhost:3000");
+  const safeOrigin = sanitizeLinkOrigin(origin);
 
-  return `${resolvedBaseUrl.replace(/\/$/, "")}/r/${slug}`;
+  return `${resolvedBaseUrl.replace(/\/$/, "")}/r/${slug}${
+    safeOrigin ? `?o=${safeOrigin}` : ""
+  }`;
 }
 
 export function renderMessageWithTracking({
@@ -66,18 +97,20 @@ export function renderMessageWithTracking({
   commenterName,
   trackedLinks,
   baseUrl,
+  origin,
 }: {
   message: string;
   commenterName?: string | null;
   trackedLinks?: MessageTrackedLink[];
   baseUrl?: string;
+  origin?: string | null;
 }) {
   let rendered = message.replace(/\{username\}/gi, commenterName ?? "there");
   const primaryLink = trackedLinks?.[0];
 
   if (!primaryLink) return rendered;
 
-  const trackedUrl = buildTrackedUrl(primaryLink.slug, baseUrl);
+  const trackedUrl = buildTrackedUrl(primaryLink.slug, baseUrl, origin);
 
   if (/\{link\}/i.test(rendered)) {
     return rendered.replace(/\{link\}/gi, trackedUrl);
