@@ -103,6 +103,22 @@ function foldNumericHomoglyphs(value: string): string {
  * Strip emojis and special characters from text, keeping only
  * letters (any script), numbers, and whitespace.
  */
+function stripVariationSelectors(text: string): string {
+  return text.normalize("NFC").replace(/[︎️]/g, "");
+}
+
+/**
+ * A keyword made only of emoji (and the joiners/selectors that build them),
+ * returned without variation selectors; null for any keyword with letters or
+ * numbers, which keeps the regular word matching.
+ */
+export function emojiKeyword(keyword: string): string | null {
+  const value = stripVariationSelectors(keyword).trim();
+  if (!value || !/\p{Extended_Pictographic}/u.test(value)) return null;
+  if (/[\p{L}\p{N}]/u.test(value)) return null;
+  return value;
+}
+
 export function stripSpecialCharacters(text: string): string {
   return text
     .replace(
@@ -175,6 +191,17 @@ export function matchKeywords(
 ): KeywordMatchResult {
   if (!commentText || keywords.length === 0) {
     return { matched: false, matchedKeyword: null };
+  }
+
+  // Emoji keywords (e.g. "🔥" for a story reaction or reply). The text pipeline
+  // below strips emoji, so these are compared on the raw text instead, ignoring
+  // variation selectors (🔥 vs 🔥️). Word boundaries do not apply to emoji.
+  const rawText = stripVariationSelectors(commentText);
+  for (const keyword of keywords) {
+    const emoji = emojiKeyword(keyword);
+    if (emoji && rawText.includes(emoji)) {
+      return { matched: true, matchedKeyword: keyword };
+    }
   }
 
   const cleanedText = foldDiacritics(
