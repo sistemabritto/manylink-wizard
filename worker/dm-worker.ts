@@ -36,7 +36,7 @@ const heartbeatTimer = setInterval(() => void heartbeat(), HEARTBEAT_INTERVAL_MS
 async function poll() {
   try {
     const attached = await attachPendingNextReels();
-    if (attached.bound > 0 || attached.failures.length > 0) {
+    if (attached.bound > 0 || attached.failedAccounts > 0) {
       console.log("[DM Worker] Next-reel attachment:", attached);
     }
     await reconcileComments();

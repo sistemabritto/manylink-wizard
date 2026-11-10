@@ -153,10 +153,11 @@ type WorkerTrackedLink = {
 function buildLinkButtons(
   trackedLinks: WorkerTrackedLink[],
   primaryLabel: string | null,
-  recipientToken: string
+  recipientToken: string,
+  origin?: string | null
 ): { title: string; url: string }[] {
   return trackedLinks.slice(0, 3).map((link, index) => ({
-    url: buildTrackedUrl(link.slug, undefined, recipientToken),
+    url: buildTrackedUrl(link.slug, undefined, recipientToken, origin),
     title:
       (index === 0 ? primaryLabel : link.label) || link.label || "Open link",
   }));
@@ -172,7 +173,8 @@ function buildInlineLinkFallback(
   commenterName: string | null | undefined,
   trackedLinks: WorkerTrackedLink[],
   bodyText: string,
-  recipientToken: string
+  recipientToken: string,
+  origin?: string | null
 ): string {
   const base =
     renderMessageWithTracking({
@@ -180,10 +182,11 @@ function buildInlineLinkFallback(
       commenterName,
       trackedLinks,
       recipientToken,
+      origin,
     }) || bodyText;
   const extraUrls = trackedLinks
     .slice(1)
-    .map((link) => buildTrackedUrl(link.slug, undefined, recipientToken));
+    .map((link) => buildTrackedUrl(link.slug, undefined, recipientToken, origin));
   return extraUrls.length > 0 ? `${base}\n${extraUrls.join("\n")}` : base;
 }
 
@@ -277,7 +280,7 @@ async function sendRevealDirectMessage({
 
 
 function connectionScope(data: DmQueueJob) {
-  return data.accountConnectionId ? { instagramAccountId: data.accountConnectionId } : {};
+  return "accountConnectionId" in data && data.accountConnectionId ? { instagramAccountId: data.accountConnectionId } : {};
 }
 
 async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
