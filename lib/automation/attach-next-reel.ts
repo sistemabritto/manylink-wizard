@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/db/client";
-import { getUserMedia, type InstagramMedia } from "@/lib/meta/client";
-import { decryptToken } from "@/lib/meta/oauth";
+import {
+  createInstagramContext,
+  hasInstagramCredentials,
+  getUserMedia,
+  type InstagramMedia,
+} from "@/lib/instagram/provider";
 
 function isReel(media: InstagramMedia): boolean {
   return media.media_product_type === "REELS";
@@ -23,42 +27,50 @@ export async function attachPendingNextReels(): Promise<AttachNextReelResult> {
     include: { instagramAccount: true },
   });
 
+  // Group by connected account so we fetch each account's media only once.
   const byAccount = new Map<
     string,
-    { account: (typeof pending)[number]["instagramAccount"]; automations: typeof pending }
+    {
+      account: (typeof pending)[number]["instagramAccount"];
+      automations: typeof pending;
+    }
   >();
   for (const automation of pending) {
-    const entry = byAccount.get(automation.instagramAccountId);
+    const key = automation.instagramAccountId;
+    const entry = byAccount.get(key);
     if (entry) entry.automations.push(automation);
-    else {
-      byAccount.set(automation.instagramAccountId, {
+    else
+      byAccount.set(key, {
         account: automation.instagramAccount,
         automations: [automation],
       });
-    }
   }
 
   let checked = 0;
   let bound = 0;
-  let failedAccounts = 0;
+  const failures: string[] = [];
 
   for (const { account, automations } of byAccount.values()) {
     checked += automations.length;
-    if (!account?.accessToken) continue;
+    if (!account || !hasInstagramCredentials(account)) continue;
 
     let reels: InstagramMedia[];
     try {
-      const media = await getUserMedia(decryptToken(account.accessToken), 25);
+      const context = await createInstagramContext(account);
+      const media = await getUserMedia({ context, limit: 25 });
       reels = media
         .filter(isReel)
-        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        .sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
     } catch (error) {
-      failedAccounts += 1;
+      failures.push(account.id);
       console.error("[attach-next-reel] media fetch failed", account.id, error);
       continue;
     }
 
     for (const automation of automations) {
+      // The "next" reel = the earliest one posted after the campaign was created.
       const nextReel = reels.find(
         (reel) => new Date(reel.timestamp) > automation.createdAt
       );
@@ -76,5 +88,5 @@ export async function attachPendingNextReels(): Promise<AttachNextReelResult> {
     }
   }
 
-  return { checked, bound, failedAccounts };
+  return { checked, bound, failedAccounts: failures.length };
 }

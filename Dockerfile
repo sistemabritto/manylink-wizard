@@ -6,6 +6,9 @@
 #             not a bundled output — needs the generated Prisma client, the
 #             full source tree under lib/ and worker/, and tsconfig.json for
 #             the `@/*` path alias tsx resolves at runtime)
+#   - cron:   `sh scripts/cron.sh` → the scheduler for /api/cron, which nothing
+#             runs off Vercel (see docs/deploy-dokploy.md). It needs scripts/
+#             in the image and wget on PATH; node:20-slim ships neither.
 #
 # next.config.ts does not set `output: "standalone"`, so `next start` already
 # requires the full node_modules tree at runtime — there is no slimmer
@@ -29,6 +32,12 @@ RUN npm run build
 FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+
+# scripts/cron.sh calls the /api/cron routes with wget, which node:20-slim does
+# not include.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next

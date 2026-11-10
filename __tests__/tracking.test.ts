@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateCtr,
+  countUniqueClicks,
+  countUniqueClicksBy,
   normalizeTopKeywords,
   summarizeDmStatuses,
 } from "../lib/tracking/analytics";
+import { hashRecipientId, parseRecipientToken } from "../lib/tracking/server";
 import {
   buildTrackedUrl,
   extractFirstUrl,
@@ -114,9 +117,10 @@ describe("campaign analytics helpers", () => {
 describe("link origin (post) tagging", () => {
   it("appends a sanitized origin to tracked urls", async () => {
     const { buildTrackedUrl } = await import("../lib/tracking/message");
-    expect(buildTrackedUrl("abc", "https://x.io/", "DQx1")).toBe("https://x.io/r/abc?o=DQx1");
-    expect(buildTrackedUrl("abc", "https://x.io", "a b&c")).toBe("https://x.io/r/abc");
+    expect(buildTrackedUrl("abc", "https://x.io/", undefined, "DQx1")).toBe("https://x.io/r/abc?o=DQx1");
+    expect(buildTrackedUrl("abc", "https://x.io", undefined, "a b&c")).toBe("https://x.io/r/abc");
     expect(buildTrackedUrl("abc", "https://x.io")).toBe("https://x.io/r/abc");
+    expect(buildTrackedUrl("abc", "https://x.io", "tok", "DQx1")).toBe("https://x.io/r/abc?o=DQx1&r=tok");
   });
 
   it("leaves destinations without the placeholder untouched", async () => {
@@ -126,6 +130,72 @@ describe("link origin (post) tagging", () => {
     );
     expect(resolveTrackedDestination("https://x.io/a?c=ig_%7Bpost%7D", "DQx1")).toBe(
       "https://x.io/a?c=ig_DQx1"
+    );
+  });
+});
+
+describe("per-recipient click tracking", () => {
+  it("adds a recipient token to tracked URLs and messages", () => {
+    expect(
+      buildTrackedUrl("abc123", "https://manychat-alternative.com", "tok")
+    ).toBe("https://manychat-alternative.com/r/abc123?r=tok");
+    expect(
+      renderMessageWithTracking({
+        message: "Grab it here: {link}",
+        trackedLinks: [
+          { slug: "abc123", destinationUrl: "https://example.com/guide" },
+        ],
+        baseUrl: "https://manychat-alternative.com",
+        recipientToken: "tok",
+      })
+    ).toBe("Grab it here: https://manychat-alternative.com/r/abc123?r=tok");
+  });
+
+  it("derives a stable, URL-safe token that hides the recipient ID", () => {
+    const token = hashRecipientId("17841400000000001");
+
+    expect(token).toBe(hashRecipientId("17841400000000001"));
+    expect(token).not.toBe(hashRecipientId("17841400000000002"));
+    expect(token).not.toContain("17841400000000001");
+    expect(parseRecipientToken(token)).toBe(token);
+  });
+
+  it("ignores missing or malformed tokens", () => {
+    expect(parseRecipientToken(null)).toBeNull();
+    expect(parseRecipientToken("")).toBeNull();
+    expect(parseRecipientToken("too-short")).toBeNull();
+    expect(parseRecipientToken("x".repeat(500))).toBeNull();
+    expect(parseRecipientToken("<script>alert(1)</script>xxxxx")).toBeNull();
+  });
+
+  it("counts each person once per campaign", () => {
+    const row = (
+      id: string,
+      automationId: string,
+      recipientHash: string | null,
+      ipHash: string | null
+    ) => ({ id, automationId, recipientHash, ipHash });
+
+    const rows = [
+      // One recipient tapping twice, from two networks, counts once.
+      row("c1", "campaign_a", "person_1", "wifi_ip"),
+      row("c2", "campaign_a", "person_1", "mobile_ip"),
+      // Older clicks without a token fall back to the IP hash.
+      row("c3", "campaign_a", null, "ip_x"),
+      row("c4", "campaign_a", null, "ip_x"),
+      // With neither, every click counts.
+      row("c5", "campaign_a", null, null),
+      row("c6", "campaign_a", null, null),
+      // The same person in another campaign counts there too.
+      row("c7", "campaign_b", "person_1", "wifi_ip"),
+    ];
+
+    expect(countUniqueClicks(rows)).toBe(5);
+    expect(countUniqueClicksBy(rows, (r) => r.automationId)).toEqual(
+      new Map([
+        ["campaign_a", 4],
+        ["campaign_b", 1],
+      ])
     );
   });
 });
