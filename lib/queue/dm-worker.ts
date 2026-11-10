@@ -29,6 +29,7 @@ import {
 } from "@/lib/meta/client";
 import { decryptToken } from "@/lib/meta/oauth";
 import { matchKeywords } from "@/lib/utils/keyword-matcher";
+import { selectCommentMatches } from "@/lib/utils/comment-campaigns";
 import { reserveDMSlot } from "@/lib/utils/rate-limiter";
 import {
   releaseWorkspaceDMReservation,
@@ -238,19 +239,8 @@ async function processComment(job: Job<ProcessCommentJob>): Promise<void> {
     orderBy: { createdAt: "asc" },
   });
 
-  for (const automation of automations) {
-    // "Any word" campaigns fire on every comment; otherwise require a keyword hit.
-    const matchResult = automation.matchAnyWord
-      ? { matched: true, matchedKeyword: null }
-      : matchKeywords(
-          commentText,
-          automation.keywords,
-          automation.wholeWordMatch
-        );
-
-    if (!matchResult.matched) {
-      continue;
-    }
+  // Keyword campaigns take precedence over "any word" campaigns (see selectCommentMatches).
+  for (const { automation, matchResult } of selectCommentMatches(commentText, automations)) {
 
     const existingLog = await prisma.dmLog.findUnique({
       where: {

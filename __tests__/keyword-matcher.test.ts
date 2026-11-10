@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { selectCommentMatches } from "../lib/utils/comment-campaigns";
 import {
   matchKeywords,
   stripSpecialCharacters,
@@ -213,5 +214,28 @@ describe("matchKeywords — edge cases", () => {
   it("should handle multi-word keywords", () => {
     const result = matchKeywords("I want more info please", ["more info"], true);
     expect(result.matched).toBe(true);
+  });
+});
+
+describe("selectCommentMatches", () => {
+  const anyWord = { id: "geral", matchAnyWord: true, keywords: [] as string[], wholeWordMatch: true };
+  const voz = { id: "voz", matchAnyWord: false, keywords: ["VOZ"], wholeWordMatch: true };
+
+  it("lets a keyword campaign take a comment that an any-word campaign would also take", () => {
+    const hits = selectCommentMatches("Voz", [anyWord, voz]);
+    expect(hits.map((h) => h.automation.id)).toEqual(["voz"]);
+    expect(hits[0].matchResult.matchedKeyword).toBe("VOZ");
+  });
+
+  it("falls back to the any-word campaign when no keyword matches", () => {
+    const hits = selectCommentMatches("amei esse vídeo", [anyWord, voz]);
+    expect(hits.map((h) => h.automation.id)).toEqual(["geral"]);
+  });
+
+  it("matches the keyword in any case and inside a sentence", () => {
+    for (const text of ["VOZ", "voz", "quero a voz!", "Voz 🎙️"]) {
+      expect(selectCommentMatches(text, [voz]).map((h) => h.automation.id)).toEqual(["voz"]);
+    }
+    expect(selectCommentMatches("vozes", [voz])).toEqual([]);
   });
 });
