@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/client";
-import { getRequestIp, hashClickIp } from "@/lib/tracking/server";
+import {
+  getRequestIp,
+  hashClickIp,
+  parseRecipientToken,
+} from "@/lib/tracking/server";
 import { resolveTrackedDestination } from "@/lib/tracking/message";
 
 type RedirectRouteProps = {
@@ -35,6 +39,9 @@ export async function GET(request: NextRequest, { params }: RedirectRouteProps) 
       instagramAccountId: trackedLink.automation.instagramAccountId,
       trackedLinkId: trackedLink.id,
       ipHash: hashClickIp(getRequestIp(request)),
+      recipientHash: parseRecipientToken(
+        new URL(request.url).searchParams.get("r")
+      ),
       userAgent: request.headers.get("user-agent"),
       referrer: request.headers.get("referer"),
     },

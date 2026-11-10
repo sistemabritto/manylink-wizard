@@ -78,6 +78,7 @@ export function resolveTrackedDestination(
 export function buildTrackedUrl(
   slug: string,
   baseUrl?: string,
+  recipientToken?: string,
   origin?: string | null
 ) {
   const resolvedBaseUrl =
@@ -87,9 +88,13 @@ export function buildTrackedUrl(
       : process.env.NEXTAUTH_URL ?? "http://localhost:3000");
   const safeOrigin = sanitizeLinkOrigin(origin);
 
-  return `${resolvedBaseUrl.replace(/\/$/, "")}/r/${slug}${
-    safeOrigin ? `?o=${safeOrigin}` : ""
-  }`;
+  // ?o= tags the post the click came from (fills {post} in the destination);
+  // ?r= counts unique clicks per recipient.
+  const params = new URLSearchParams();
+  if (safeOrigin) params.set("o", safeOrigin);
+  if (recipientToken) params.set("r", recipientToken);
+  const query = params.toString();
+  return `${resolvedBaseUrl.replace(/\/$/, "")}/r/${slug}${query ? `?${query}` : ""}`;
 }
 
 export function renderMessageWithTracking({
@@ -98,19 +103,21 @@ export function renderMessageWithTracking({
   trackedLinks,
   baseUrl,
   origin,
+  recipientToken,
 }: {
   message: string;
   commenterName?: string | null;
   trackedLinks?: MessageTrackedLink[];
   baseUrl?: string;
   origin?: string | null;
+  recipientToken?: string;
 }) {
   let rendered = message.replace(/\{username\}/gi, commenterName ?? "there");
   const primaryLink = trackedLinks?.[0];
 
   if (!primaryLink) return rendered;
 
-  const trackedUrl = buildTrackedUrl(primaryLink.slug, baseUrl, origin);
+  const trackedUrl = buildTrackedUrl(primaryLink.slug, baseUrl, recipientToken, origin);
 
   if (/\{link\}/i.test(rendered)) {
     return rendered.replace(/\{link\}/gi, trackedUrl);
