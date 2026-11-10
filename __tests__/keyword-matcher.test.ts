@@ -325,3 +325,20 @@ describe("matchKeywords — diacritics", () => {
     expect(matchKeywords("иод", ["йод"], true).matched).toBe(false);
   });
 });
+
+describe("matchKeywords — emoji keywords", () => {
+  it("matches an emoji-only reply (story reaction or reply)", () => {
+    expect(matchKeywords("🔥", ["🔥"], true)).toEqual({ matched: true, matchedKeyword: "🔥" });
+    expect(matchKeywords("🔥🔥🔥", ["🔥"], true).matched).toBe(true);
+    expect(matchKeywords("quero 🔥 pfv", ["🔥"], true).matched).toBe(true);
+  });
+  it("ignores variation selectors", () => {
+    expect(matchKeywords("❤️", ["❤"], true).matched).toBe(true);
+    expect(matchKeywords("❤", ["❤️"], true).matched).toBe(true);
+  });
+  it("keeps word keywords working next to emoji keywords", () => {
+    expect(matchKeywords("hot!", ["🔥", "HOT"], true)).toEqual({ matched: true, matchedKeyword: "HOT" });
+    expect(matchKeywords("oi", ["🔥", "HOT"], true).matched).toBe(false);
+    expect(matchKeywords("😂", ["🔥"], true).matched).toBe(false);
+  });
+});
